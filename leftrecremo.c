@@ -6,14 +6,10 @@
 #define MAX_LEN  100
 
 /* Grammar storage */
-char lhs[MAX_PROD];           /* Left-hand side non-terminal       */
+char lhs[MAX_PROD][3];        /* Left-hand side non-terminal (e.g. "A" or "A'") */
 char rhs[MAX_PROD][MAX_LEN];  /* Right-hand side alternatives (|)  */
 int  count = 0;               /* Total number of grammar rules      */
 
-/* ---------------------------------------------------------------
-   read_grammar  –  Read N rules from user.
-   Format: A=aB|Bc|d    (one line per non-terminal)
---------------------------------------------------------------- */
 void read_grammar(int n) {
     printf("Enter productions (e.g.  A=aA|b  or  E=ET|a):\n");
     for (int i = 0; i < n; i++) {
@@ -21,25 +17,16 @@ void read_grammar(int n) {
         fgets(line, sizeof(line), stdin);
         line[strcspn(line, "\n")] = '\0';
 
-        lhs[count] = line[0];              /* First char is NT     */
+        lhs[count][0] = line[0];          /* First char is NT     */
+        lhs[count][1] = '\0';
         strcpy(rhs[count], strchr(line,'=') + 1);  /* After '='   */
         count++;
     }
 }
 
-/* ---------------------------------------------------------------
-   remove_left_recursion  –  For each non-terminal A:
-     1. Separate alternatives into:
-            alpha  (those starting with A  → left-recursive)
-            beta   (those NOT starting with A)
-     2. If no alpha found → nothing to do.
-     3. Otherwise rewrite:
-            A  → beta1 A' | beta2 A' | ...
-            A' → alpha1 A' | alpha2 A' | ε
---------------------------------------------------------------- */
 void remove_left_recursion() {
     for (int i = 0; i < count; i++) {
-        char A = lhs[i];
+        char A = lhs[i][0];
 
         /* ---- Collect alpha and beta lists ---- */
         char alpha[MAX_PROD][MAX_LEN];  /* left-recursive tails  */
@@ -74,8 +61,9 @@ void remove_left_recursion() {
         strcpy(rhs[i], newA);
 
         /* ---- Append new rule:  A' → alpha1 A' | alpha2 A' | # ---- */
-        lhs[count] = Ap[0];            /* store A' as a new NT entry */
-        lhs[count+1] = '\0';           /* (single char trick)        */
+        lhs[count][0] = Ap[0];         /* store 'A'  */
+        lhs[count][1] = Ap[1];         /* store '\'' */
+        lhs[count][2] = '\0';
 
         char newAp[MAX_LEN] = "";
         for (int a = 0; a < na; a++) {
@@ -85,23 +73,16 @@ void remove_left_recursion() {
         }
         strcat(newAp, "|#");            /* add  ε  alternative        */
 
-        lhs[count] = Ap[0];
         strcpy(rhs[count], newAp);
         count++;
     }
 }
 
-/* ---------------------------------------------------------------
-   print_grammar  –  Show every production in A=alt1|alt2 form.
---------------------------------------------------------------- */
 void print_grammar() {
     for (int i = 0; i < count; i++)
-        printf("  %c = %s\n", lhs[i], rhs[i]);
+        printf("  %s = %s\n", lhs[i], rhs[i]);
 }
 
-/* ---------------------------------------------------------------
-   main
---------------------------------------------------------------- */
 int main() {
     int n;
     printf("Enter number of productions: ");

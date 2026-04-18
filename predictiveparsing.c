@@ -52,7 +52,7 @@ void read_grammar() {
 
     for (int i = 0; i < n; i++) {
         char line[100]; fgets(line, sizeof line, stdin);
-        line[strcspn(line, "\n")] = 0;
+        line[strcspn(line, "\n")] = '\0';
         char A = line[0];
 
         /* register non-terminal */

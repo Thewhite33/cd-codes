@@ -1,3 +1,4 @@
 *p.c
 *.exe
-test.c
+test*.c
+tempCodeRunnerFile.c

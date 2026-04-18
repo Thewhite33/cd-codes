@@ -1,227 +1,309 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-#include <stdbool.h>
 
-#define MAX_PROD 100
-#define MAX_LEN  100
-#define MAX_NT   26
-#define EPSILON  '#'
+#define MAX 20
 
-/* ── Grammar storage (reused from your previous code) ── */
-char productions[MAX_PROD][MAX_LEN];
-int  prodCount = 0;
-char first[MAX_NT][MAX_LEN],  follow[MAX_NT][MAX_LEN];
-bool inFirst[MAX_NT][256],    inFollow[MAX_NT][256];
-bool isNT[256];
+char prod[MAX][MAX];
+char nt[MAX];              // non-terminals
+char t[50];                // terminals
+char first[MAX][MAX];
+char follow[MAX][MAX];
+char table[MAX][50][MAX];
 
-/* ── Parsing table: table[NT][terminal] = production string ── */
-char table[MAX_NT][128][MAX_LEN];
+int n, ntCount = 0, tCount = 0;
 
-/* ── Same helpers from your code ── */
-bool add(char set[MAX_LEN], bool lookup[256], char ch) {
-    if (!ch || lookup[(unsigned char)ch]) return false;
-    lookup[(unsigned char)ch] = true;
-    int l = strlen(set);
-    set[l] = ch; set[l+1] = '\0';
-    return true;
+/* ---------------- UTIL ---------------- */
+
+int contains(char set[], char ch) {
+    for (int i = 0; set[i]; i++)
+        if (set[i] == ch) return 1;
+    return 0;
 }
-bool hasEpsilon(int idx) { return inFirst[idx][(unsigned char)EPSILON]; }
 
-void parseLine(char *line) {
-    char lhs = line[0];
-    isNT[(unsigned char)lhs] = true;
-    char *eq = strchr(line, '=') + 1;
-    char tmp[MAX_LEN]; strcpy(tmp, eq);
-    for (char *tok = strtok(tmp, "|"); tok; tok = strtok(NULL, "|")) {
-        productions[prodCount][0] = lhs;
-        productions[prodCount][1] = '=';
-        strcpy(&productions[prodCount][2], tok);
-        for (int i = 0; productions[prodCount][2+i]; i++)
-            if (isupper(productions[prodCount][2+i]))
-                isNT[(unsigned char)productions[prodCount][2+i]] = true;
-        prodCount++;
+int add(char set[], char ch) {
+    if (!contains(set, ch)) {
+        int l = strlen(set);
+        set[l] = ch;
+        set[l+1] = '\0';
+        return 1;
+    }
+    return 0;
+}
+
+int idxNT(char c) {
+    for (int i = 0; i < ntCount; i++)
+        if (nt[i] == c) return i;
+    return -1;
+}
+
+int idxT(char c) {
+    for (int i = 0; i < tCount; i++)
+        if (t[i] == c) return i;
+    return -1;
+}
+
+/* ---------------- EXTRACT SYMBOLS ---------------- */
+
+void getNT() {
+    for (int i = 0; i < n; i++) {
+        if (idxNT(prod[i][0]) == -1)
+            nt[ntCount++] = prod[i][0];
     }
 }
 
-/* ── FIRST (identical to your simplified version) ── */
-void computeFirst() {
-    bool changed;
-    do {
-        changed = false;
-        for (int p = 0; p < prodCount; p++) {
-            char A = productions[p][0];
-            char *rhs = &productions[p][2];
-            int ai = A - 'A';
-            if (!rhs[0] || rhs[0] == EPSILON) {
-                if (add(first[ai], inFirst[ai], EPSILON)) changed = true;
-                continue;
+void getT() {
+    for (int i = 0; i < n; i++) {
+        for (int j = 2; prod[i][j]; j++) {
+            char c = prod[i][j];
+            if (!isupper(c) && c != '#' && c != '|') {
+                if (idxT(c) == -1)
+                    t[tCount++] = c;
             }
-            bool allEps = true;
-            for (int j = 0; rhs[j] && allEps; j++) {
-                if (!isupper(rhs[j])) {
-                    if (add(first[ai], inFirst[ai], rhs[j])) changed = true;
-                    allEps = false;
-                } else {
-                    int xi = rhs[j] - 'A';
-                    for (int k = 0; first[xi][k]; k++)
-                        if (first[xi][k] != EPSILON)
-                            if (add(first[ai], inFirst[ai], first[xi][k])) changed = true;
-                    if (!hasEpsilon(xi)) allEps = false;
-                }
-            }
-            if (allEps && add(first[ai], inFirst[ai], EPSILON)) changed = true;
         }
-    } while (changed);
+    }
+    t[tCount++] = '$';
 }
 
-/* ── FOLLOW (identical to your simplified version) ── */
-void computeFollow(char start) {
-    add(follow[start-'A'], inFollow[start-'A'], '$');
-    bool changed;
-    do {
-        changed = false;
-        for (int p = 0; p < prodCount; p++) {
-            char A = productions[p][0];
-            char *rhs = &productions[p][2];
-            int ai = A - 'A';
+/* ---------------- FIRST ---------------- */
+
+void computeFirst() {
+    int changed = 1;
+
+    while (changed) {
+        changed = 0;
+
+        for (int i = 0; i < n; i++) {
+            int A = idxNT(prod[i][0]);
+            char *rhs = prod[i] + 2;
+
             for (int j = 0; rhs[j]; j++) {
-                if (!isupper(rhs[j])) continue;
-                int bi = rhs[j] - 'A';
-                bool eps = true;
-                for (int k = j+1; rhs[k] && eps; k++) {
+                char X = rhs[j];
+
+                if (X == '|') continue;
+
+                if (!isupper(X)) {
+                    if (add(first[A], X)) changed = 1;
+                    break;
+                }
+
+                int B = idxNT(X);
+                int hasEps = 0;
+
+                for (int k = 0; first[B][k]; k++) {
+                    if (first[B][k] == '#')
+                        hasEps = 1;
+                    else if (add(first[A], first[B][k]))
+                        changed = 1;
+                }
+
+                if (!hasEps)
+                    break;
+
+                if (rhs[j+1] == '\0')
+                    if (add(first[A], '#')) changed = 1;
+            }
+        }
+    }
+}
+
+/* FIRST of string */
+void firstOfString(char *rhs, int pos, char result[]) {
+    if (rhs[pos] == '\0') {
+        add(result, '#');
+        return;
+    }
+
+    if (!isupper(rhs[pos])) {
+        add(result, rhs[pos]);
+        return;
+    }
+
+    int id = idxNT(rhs[pos]);
+    int hasEps = 0;
+
+    for (int i = 0; first[id][i]; i++) {
+        if (first[id][i] == '#')
+            hasEps = 1;
+        else
+            add(result, first[id][i]);
+    }
+
+    if (hasEps)
+        firstOfString(rhs, pos + 1, result);
+}
+
+/* ---------------- FOLLOW ---------------- */
+
+void computeFollow() {
+    add(follow[0], '$');   // start symbol
+
+    int changed = 1;
+
+    while (changed) {
+        changed = 0;
+
+        for (int i = 0; i < n; i++) {
+            char A = prod[i][0];
+            int Aidx = idxNT(A);
+
+            char *rhs = prod[i] + 2;
+
+            for (int j = 0; rhs[j]; j++) {
+                char B = rhs[j];
+
+                if (!isupper(B)) continue;
+
+                int Bidx = idxNT(B);
+                int k = j + 1;
+                int hasEps = 1;
+
+                while (rhs[k]) {
+                    if (rhs[k] == '|') {
+                        hasEps = 1;
+                        k++;
+                        continue;
+                    }
+
+                    hasEps = 0;
+
                     if (!isupper(rhs[k])) {
-                        if (add(follow[bi], inFollow[bi], rhs[k])) changed = true;
-                        eps = false;
+                        if (add(follow[Bidx], rhs[k])) changed = 1;
+                        break;
+                    }
+
+                    int Cidx = idxNT(rhs[k]);
+                    int epsInC = 0;
+
+                    for (int x = 0; first[Cidx][x]; x++) {
+                        if (first[Cidx][x] == '#')
+                            epsInC = 1;
+                        else if (add(follow[Bidx], first[Cidx][x]))
+                            changed = 1;
+                    }
+
+                    if (epsInC) {
+                        hasEps = 1;
+                        k++;
                     } else {
-                        int xi = rhs[k] - 'A';
-                        for (int m = 0; first[xi][m]; m++)
-                            if (first[xi][m] != EPSILON)
-                                if (add(follow[bi], inFollow[bi], first[xi][m])) changed = true;
-                        if (!hasEpsilon(xi)) eps = false;
+                        hasEps = 0;
+                        break;
                     }
                 }
-                if (eps)
-                    for (int k = 0; follow[ai][k]; k++)
-                        if (add(follow[bi], inFollow[bi], follow[ai][k])) changed = true;
+
+                if (hasEps) {
+                    for (int x = 0; follow[Aidx][x]; x++) {
+                        if (add(follow[Bidx], follow[Aidx][x]))
+                            changed = 1;
+                    }
+                }
             }
         }
-    } while (changed);
-}
-
-/* ── FIRST of a whole RHS string (needed for table building) ── */
-void firstOfRHS(char *rhs, char out[MAX_LEN], bool outLookup[256]) {
-    if (!rhs[0] || rhs[0] == EPSILON) { add(out, outLookup, EPSILON); return; }
-    bool allEps = true;
-    for (int j = 0; rhs[j] && allEps; j++) {
-        if (!isupper(rhs[j])) {
-            add(out, outLookup, rhs[j]); allEps = false;
-        } else {
-            int xi = rhs[j] - 'A';
-            for (int k = 0; first[xi][k]; k++)
-                if (first[xi][k] != EPSILON) add(out, outLookup, first[xi][k]);
-            if (!hasEpsilon(xi)) allEps = false;
-        }
     }
-    if (allEps) add(out, outLookup, EPSILON);
 }
 
-/* ── Build LL(1) parsing table ── */
+/* ---------------- TABLE ---------------- */
+
 void buildTable() {
-    for (int p = 0; p < prodCount; p++) {
-        char A   = productions[p][0];
-        char *rhs = &productions[p][2];
-        int  ai  = A - 'A';
+    for (int i = 0; i < ntCount; i++)
+        for (int j = 0; j < tCount; j++)
+            strcpy(table[i][j], "");
 
-        /* compute FIRST(rhs) */
-        char   fset[MAX_LEN] = "";
-        bool   flook[256]    = {false};
-        firstOfRHS(rhs, fset, flook);
+    for (int i = 0; i < n; i++) {
+        char A = prod[i][0];
+        int Aidx = idxNT(A);
 
-        /* Rule 1: for each terminal t in FIRST(rhs), add to table[A][t] */
-        for (int i = 0; fset[i]; i++) {
-            char t = fset[i];
-            if (t == EPSILON) continue;
-            if (table[ai][(unsigned char)t][0])
-                printf("  [conflict] table[%c][%c] already has: %s\n", A, t, table[ai][(unsigned char)t]);
-            else
-                strcpy(table[ai][(unsigned char)t], productions[p]);
+        char *rhs = prod[i] + 2;
+
+        char temp[MAX] = "";
+        firstOfString(rhs, 0, temp);
+
+        for (int j = 0; temp[j]; j++) {
+            if (temp[j] == '#') continue;
+
+            int tidx = idxT(temp[j]);
+
+            if (strlen(table[Aidx][tidx]) != 0)
+                printf("Conflict at [%c, %c]\n", A, temp[j]);
+
+            strcpy(table[Aidx][tidx], prod[i]);
         }
 
-        /* Rule 2: if epsilon in FIRST(rhs), use FOLLOW(A) */
-        if (flook[(unsigned char)EPSILON]) {
-            for (int i = 0; follow[ai][i]; i++) {
-                char t = follow[ai][i];
-                if (table[ai][(unsigned char)t][0])
-                    printf("  [conflict] table[%c][%c] already has: %s\n", A, t, table[ai][(unsigned char)t]);
-                else
-                    strcpy(table[ai][(unsigned char)t], productions[p]);
+        if (contains(temp, '#')) {
+            for (int j = 0; follow[Aidx][j]; j++) {
+                int tidx = idxT(follow[Aidx][j]);
+
+                if (strlen(table[Aidx][tidx]) != 0)
+                    printf("Conflict at [%c, %c]\n", A, follow[Aidx][j]);
+
+                strcpy(table[Aidx][tidx], prod[i]);
             }
         }
     }
 }
 
-/* ── Collect all terminals that appear in table (for neat printing) ── */
-void printTable() {
-    /* gather terminals used */
-    char terms[64]; int tc = 0;
-    bool seen[256] = {false};
-    for (int i = 0; i < MAX_NT; i++)
-        if (isNT['A'+i])
-            for (int t = 0; t < 128; t++)
-                if (table[i][t][0] && !seen[t]) { seen[t]=true; terms[tc++]=(char)t; }
-    /* sort roughly: lowercase first, then $ */
-    for (int a=0;a<tc-1;a++) for(int b=a+1;b<tc;b++) if(terms[a]>terms[b]){char tmp=terms[a];terms[a]=terms[b];terms[b]=tmp;}
+/* ---------------- PRINT ---------------- */
 
-    /* header */
-    printf("\n%-6s", "");
-    for (int j = 0; j < tc; j++) printf("  %-14c", terms[j]);
-    printf("\n%-6s", "------");
-    for (int j = 0; j < tc; j++) printf("  %-14s", "--------------");
+void printFirst() {
+    printf("\nFIRST:\n");
+    for (int i = 0; i < ntCount; i++) {
+        printf("FIRST(%c) = { ", nt[i]);
+        for (int j = 0; first[i][j]; j++)
+            printf("%c ", first[i][j]);
+        printf("}\n");
+    }
+}
+
+void printFollow() {
+    printf("\nFOLLOW:\n");
+    for (int i = 0; i < ntCount; i++) {
+        printf("FOLLOW(%c) = { ", nt[i]);
+        for (int j = 0; follow[i][j]; j++)
+            printf("%c ", follow[i][j]);
+        printf("}\n");
+    }
+}
+
+void printTable() {
+    printf("\nLL(1) Parsing Table:\n\n");
+
+    printf("     ");
+    for (int i = 0; i < tCount; i++)
+        printf("%5c", t[i]);
     printf("\n");
 
-    /* rows */
-    for (int i = 0; i < MAX_NT; i++) {
-        if (!isNT['A'+i]) continue;
-        printf("%-6c", 'A'+i);
-        for (int j = 0; j < tc; j++) {
-            char *entry = table[i][(unsigned char)terms[j]];
-            printf("  %-14s", entry[0] ? entry : "-");
+    for (int i = 0; i < ntCount; i++) {
+        printf("%5c", nt[i]);
+        for (int j = 0; j < tCount; j++) {
+            if (strlen(table[i][j]) == 0)
+                printf("%5s", "-");
+            else
+                printf("%5s", table[i][j]);
         }
         printf("\n");
     }
 }
 
+/* ---------------- MAIN ---------------- */
+
 int main() {
-    int n;
-    printf("Enter number of productions: "); scanf("%d",&n); getchar();
-    printf("Enter productions (e.g. E=TE'  E'=+TE'|#  use # for epsilon):\n");
-    for (int i = 0; i < n; i++) {
-        char line[MAX_LEN];
-        fgets(line, sizeof line, stdin);
-        line[strcspn(line,"\n")] = '\0';
-        if (strlen(line)) parseLine(line);
-    }
+    printf("Enter number of productions: ");
+    scanf("%d", &n);
+
+    printf("Enter productions (A=alpha):\n");
+    for (int i = 0; i < n; i++)
+        scanf("%s", prod[i]);
+
+    getNT();
+    getT();
 
     computeFirst();
-    computeFollow(productions[0][0]);
-
-    printf("\n=== FIRST sets ===\n");
-    for (int i = 0; i < MAX_NT; i++)
-        if (isNT['A'+i] && first[i][0]){ 
-            printf("FIRST(%c) = { ", 'A'+i);
-            for (int j=0;first[i][j];j++) printf("%c ",first[i][j]); 
-            printf("}\n"); 
-        }
-
-    printf("\n=== FOLLOW sets ===\n");
-    for (int i = 0; i < MAX_NT; i++)
-        if (isNT['A'+i] && follow[i][0])
-            { printf("FOLLOW(%c) = { ", 'A'+i);
-              for (int j=0;follow[i][j];j++) printf("%c ",follow[i][j]); printf("}\n"); }
-
+    computeFollow();
     buildTable();
-    printf("\n=== LL(1) Parsing Table ===\n");
+
+    printFirst();
+    printFollow();
     printTable();
+
     return 0;
 }

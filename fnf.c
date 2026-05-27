@@ -1,192 +1,183 @@
-#include <stdio.h>
-#include <string.h>
-#include <ctype.h>
+#include<stdio.h>
+#include<ctype.h>
+#include<string.h>
 
 #define MAX 20
 
 char prod[MAX][MAX];
-char nt[MAX];          // unique non-terminals
 char first[MAX][MAX];
 char follow[MAX][MAX];
+char nt[MAX];
+int ntCount = 0;
+int n;
 
-int n, ntCount = 0;
-
-/* check existence */
-int contains(char set[], char ch) {
-    for (int i = 0; set[i]; i++)
-        if (set[i] == ch) return 1;
-    return 0;
-}
-
-/* add symbol */
-int add(char set[], char ch) {
-    if (!contains(set, ch)) {
-        int l = strlen(set);
-        set[l] = ch;
-        set[l+1] = '\0';
-        return 1;
+int idx(char c){
+    for(int i=0;i<ntCount;i++){
+        if(nt[i] == c){
+            return i;
+        }
     }
-    return 0;
-}
-
-/* get index */
-int idx(char c) {
-    for (int i = 0; i < ntCount; i++)
-        if (nt[i] == c) return i;
     return -1;
 }
 
-/* extract unique non-terminals */
-void getNonTerminals() {
-    for (int i = 0; i < n; i++) {
+void getNonTerminals(){
+    for(int i=0;i<n;i++){
         char c = prod[i][0];
-        if (idx(c) == -1) {
+        if(idx(c) == -1){
             nt[ntCount++] = c;
         }
     }
 }
 
-int main() {
-    printf("Enter number of productions: ");
-    scanf("%d", &n);
+int contains(char set[],char c){
+    for(int i=0;set[i];i++){
+        if(set[i] == c){
+            return 1;
+        }
+    }
+    return 0;
+}
 
-    printf("Enter productions (A=alpha):\n");
-    for (int i = 0; i < n; i++) {
-        scanf("%s", prod[i]);
+int add(char set[],char ch){
+    if(!contains(set,ch)){
+        int len = strlen(set);
+        set[len] = ch;
+        set[len+1] = '\0';
+
+        return 1;
+    }
+    return 0;
+}
+
+int main(){
+    printf("Enter number of productions: ");
+    scanf("%d",&n);
+
+    printf("Enter productions: ");
+    for(int i=0;i<n;i++){
+        scanf("%s",prod[i]);
     }
 
     getNonTerminals();
 
-    for (int i = 0; i < ntCount; i++) {
-        first[i][0] = '\0';
-        follow[i][0] = '\0';
+    //Calculating first - initial pass
+    for(int i=0;i<n;i++){
+        char A = prod[i][0];
+        char firstSymbol = prod[i][2];
+
+        if(!isupper(firstSymbol)){
+            int Aidx = idx(A);
+            add(first[Aidx],firstSymbol);
+        }
     }
 
-    /* ================= FIRST ================= */
     int changed = 1;
-
-    while (changed) {
+    while(changed){
         changed = 0;
+        for(int i=0;i<n;i++){
+            char A = prod[i][0];
+            int Aidx = idx(A);
+            int k = 2;
+            int hasEpsilon = 1;
 
-        for (int i = 0; i < n; i++) {
-            int A = idx(prod[i][0]);
-            char *rhs = prod[i] + 2;
-
-            for (int j = 0; rhs[j]; j++) {
-                char X = rhs[j];
-
-                if (X == '|') continue;
-
-                if (!isupper(X)) {
-                    if (add(first[A], X)) changed = 1;
-                    break;
+            while(prod[i][k] != '\0' && hasEpsilon){
+                char X = prod[i][k];
+                hasEpsilon = 0;
+                if(isupper(X)){
+                    int Xidx = idx(X);
+                    for(int j=0;first[Xidx][j];j++){
+                        if(first[Xidx][j] == '#'){
+                            hasEpsilon = 1;
+                        } else{
+                            if(add(first[Aidx],first[Xidx][j])){
+                                changed = 1;
+                            }
+                        }
+                    }
+                } else{
+                    if(X == '#'){
+                        hasEpsilon = 1;
+                    } else{
+                        if(add(first[Aidx],X)){
+                            changed = 1;
+                        }
+                    }
                 }
-
-                int B = idx(X);
-                int hasEps = 0;
-
-                for (int k = 0; first[B][k]; k++) {
-                    if (first[B][k] == '#')
-                        hasEps = 1;
-                    else if (add(first[A], first[B][k]))
-                        changed = 1;
+                k++;
+            }
+            if(hasEpsilon){
+                if(add(first[Aidx],'#')){
+                    changed = 1;
                 }
-
-                if (!hasEps)
-                    break;
-
-                if (rhs[j+1] == '\0')
-                    if (add(first[A], '#')) changed = 1;
             }
         }
     }
 
-    /* ================= FOLLOW ================= */
-
-    // start symbol
-    add(follow[0], '$');
-
-    changed = 1;
-
-    while (changed) {
-        changed = 0;
-
-        for (int i = 0; i < n; i++) {
+    //Follow calcultions
+    add(follow[idx(prod[0][0])],'$');
+    int followChanged = 1;
+    while(followChanged){
+        followChanged = 0;
+        for(int i=0;i<n;i++){
             char A = prod[i][0];
             int Aidx = idx(A);
 
-            char *rhs = prod[i] + 2;
+            for(int j=2;prod[i][j] != '\0';j++){
+                char B = prod[i][j];
+                if(isupper(B)){
+                    int Bidx = idx(B);
+                    int k = j+1;
+                    int hasEpsilon = 1;
+                    while(prod[i][k] != '\0' && hasEpsilon){
+                        char X = prod[i][k];
+                        hasEpsilon = 0;
 
-            for (int j = 0; rhs[j]; j++) {
-                char B = rhs[j];
-
-                if (!isupper(B)) continue;
-
-                int Bidx = idx(B);
-
-                int k = j + 1;
-                int hasEps = 1;
-
-                while (rhs[k]) {
-                    // if (rhs[k] == '|') {
-                    //     hasEps = 1;
-                    //     k++;
-                    //     continue;
-                    // }
-
-                    hasEps = 0;
-
-                    if (!isupper(rhs[k])) {
-                        if (add(follow[Bidx], rhs[k])) changed = 1;
-                        break;
-                    }
-
-                    int Cidx = idx(rhs[k]);
-                    int epsInC = 0;
-
-                    for (int x = 0; first[Cidx][x]; x++) {
-                        if (first[Cidx][x] == '#')
-                            epsInC = 1;
-                        else if (add(follow[Bidx], first[Cidx][x]))
-                            changed = 1;
-                    }
-
-                    if (epsInC) {
-                        hasEps = 1;
+                        if(isupper(X)){
+                            int Xidx = idx(X);
+                            for(int l=0;first[Xidx][l];l++){
+                                if(first[Xidx][l] == '#'){
+                                    hasEpsilon = 1;
+                                } else{
+                                    if(add(follow[Bidx],first[Xidx][l])){
+                                        followChanged = 1;
+                                    }
+                                }
+                            }
+                        }else{
+                            if(X != '#'){
+                                if(add(follow[Bidx], X)){
+                                    followChanged = 1;
+                                }
+                            }
+                        }
                         k++;
-                    } else {
-                        hasEps = 0;
-                        break;
                     }
-                }
-
-                if (hasEps) {
-                    for (int x = 0; follow[Aidx][x]; x++) {
-                        if (add(follow[Bidx], follow[Aidx][x]))
-                            changed = 1;
+                    if(hasEpsilon){
+                        for(int l=0; follow[Aidx][l]; l++){
+                            if(add(follow[Bidx], follow[Aidx][l])){
+                                followChanged = 1;
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    /* ================= OUTPUT ================= */
-
-    printf("\nFIRST sets:\n");
-    for (int i = 0; i < ntCount; i++) {
-        printf("FIRST(%c) = { ", nt[i]);
-        for (int j = 0; first[i][j]; j++)
-            printf("%c ", first[i][j]);
+    //Print first
+    for(int i=0;i<ntCount;i++){
+        printf("first(%c)={",nt[i]);
+        for(int j=0;first[i][j];j++){
+            printf(" %c ",first[i][j]);
+        }
         printf("}\n");
     }
 
-    printf("\nFOLLOW sets:\n");
-    for (int i = 0; i < ntCount; i++) {
-        printf("FOLLOW(%c) = { ", nt[i]);
-        for (int j = 0; follow[i][j]; j++)
-            printf("%c ", follow[i][j]);
+    for(int i=0;i<ntCount;i++){
+        printf("follow(%c)={",nt[i]);
+        for(int j=0;follow[i][j];j++){
+            printf(" %c ",follow[i][j]);
+        }
         printf("}\n");
     }
-
-    return 0;
 }

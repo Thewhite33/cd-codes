@@ -1,283 +1,381 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
-#define MAX_NT     10
-#define MAX_T      20
-#define MAX_PROD   5
-#define MAX_LEN    50
-#define STACK_SIZE 100
+#define MAX 30
+#define MAX_LEN 100
 
-/* ── Grammar ── */
-char  nonterm[MAX_NT];         /* list of non-terminals          */
-char  term[MAX_T][4];          /* list of terminals  (incl. "$") */
-int   nt_cnt = 0, t_cnt = 0;
+char prod[MAX][MAX_LEN];
+char nt[MAX];
+char t[MAX];
+char first[MAX][MAX];
+char follow[MAX][MAX];
+char table[MAX][MAX][MAX_LEN];
 
-/* Productions per non-terminal: prods[A][0..k] = "aB" etc. */
-char  prods[MAX_NT][MAX_PROD][MAX_LEN];
-int   prod_cnt[MAX_NT];
+int n, ntCount = 0, tCount = 0;
 
-/* FIRST / FOLLOW */
-char  First[MAX_NT][MAX_T][4];
-int   first_cnt[MAX_NT];
-char  Follow[MAX_NT][MAX_T][4];
-int   follow_cnt[MAX_NT];
+/* ---------- utility ---------- */
 
-/* Parsing table: table[NT][T] = production string, "" = error */
-char  table[MAX_NT][MAX_T][MAX_LEN];
-
-/* ── helpers ── */
-int nt_idx(char c) {
-    for (int i = 0; i < nt_cnt; i++) if (nonterm[i] == c) return i;
-    return -1;
-}
-int t_idx(const char *s) {
-    for (int i = 0; i < t_cnt; i++) if (!strcmp(term[i], s)) return i;
-    return -1;
-}
-int in_set(char set[][4], int cnt, const char *s) {
-    for (int i = 0; i < cnt; i++) if (!strcmp(set[i], s)) return 1;
+int contains(char set[], char ch) {
+    for (int i = 0; set[i]; i++)
+        if (set[i] == ch) return 1;
     return 0;
 }
-void add_to_set(char set[][4], int *cnt, const char *s) {
-    if (!in_set(set, *cnt, s)) strcpy(set[(*cnt)++], s);
+
+int add(char set[], char ch) {
+    if (!contains(set, ch)) {
+        int l = strlen(set);
+        set[l] = ch;
+        set[l+1] = '\0';
+        return 1;
+    }
+    return 0;
 }
 
-/* ── input ── */
-void read_grammar() {
-    int n;
-    printf("Number of productions: "); scanf("%d", &n); getchar();
-    printf("Enter each as  A=aB|c  (use # for epsilon):\n");
+int idxNT(char c) {
+    for (int i = 0; i < ntCount; i++)
+        if (nt[i] == c) return i;
+    return -1;
+}
 
+int idxT(char c) {
+    for (int i = 0; i < tCount; i++)
+        if (t[i] == c) return i;
+    return -1;
+}
+
+/* ---------- extract symbols ---------- */
+
+void getNT() {
     for (int i = 0; i < n; i++) {
-        char line[100]; fgets(line, sizeof line, stdin);
-        line[strcspn(line, "\n")] = '\0';
-        char A = line[0];
+        if (idxNT(prod[i][0]) == -1)
+            nt[ntCount++] = prod[i][0];
+    }
+}
 
-        /* register non-terminal */
-        if (nt_idx(A) < 0) nonterm[nt_cnt++] = A;
-        int ai = nt_idx(A);
+void getT() {
+    for (int i = 0; i < n; i++) {
+        for (int j = 2; prod[i][j]; j++) {
+            char c = prod[i][j];
+            if (!isupper(c) && c != '#') {
+                if (idxT(c) == -1)
+                    t[tCount++] = c;
+            }
+        }
+    }
+    t[tCount++] = '$';
+}
 
-        char *rhs = strchr(line, '=') + 1;
-        char tmp[100]; strcpy(tmp, rhs);
-        for (char *tok = strtok(tmp, "|"); tok; tok = strtok(NULL, "|"))
-            strcpy(prods[ai][prod_cnt[ai]++], tok);
+/* ---------- FIRST ---------- */
+
+void computeFirst() {
+    int changed = 1;
+
+    while (changed) {
+        changed = 0;
+
+        for (int i = 0; i < n; i++) {
+            int A = idxNT(prod[i][0]);
+            char *rhs = prod[i] + 2;
+
+            for (int j = 0; rhs[j]; j++) {
+                char X = rhs[j];
+
+                if (!isupper(X)) {
+                    if (add(first[A], X)) changed = 1;
+                    break;
+                }
+
+                int B = idxNT(X);
+                int hasEps = 0;
+
+                for (int k = 0; first[B][k]; k++) {
+                    if (first[B][k] == '#')
+                        hasEps = 1;
+                    else if (add(first[A], first[B][k]))
+                        changed = 1;
+                }
+
+                if (!hasEps)
+                    break;
+
+                if (rhs[j+1] == '\0')
+                    if (add(first[A], '#')) changed = 1;
+            }
+        }
+    }
+}
+
+/* FIRST of string */
+
+void firstOfString(char str[], int pos, char result[]) {
+    if (str[pos] == '\0') {
+        add(result, '#');
+        return;
     }
 
-    /* collect terminals */
-    strcpy(term[t_cnt++], "$");
-    for (int i = 0; i < nt_cnt; i++)
-        for (int j = 0; j < prod_cnt[i]; j++)
-            for (char *p = prods[i][j]; *p; p++)
-                if (!isupper(*p) && *p != '#') {
-                    char ts[2] = {*p, 0};
-                    if (t_idx(ts) < 0) strcpy(term[t_cnt++], ts);
-                }
+    if (!isupper(str[pos])) {
+        add(result, str[pos]);
+        return;
+    }
+
+    int id = idxNT(str[pos]);
+    int hasEps = 0;
+
+    for (int i = 0; first[id][i]; i++) {
+        if (first[id][i] == '#')
+            hasEps = 1;
+        else
+            add(result, first[id][i]);
+    }
+
+    if (hasEps)
+        firstOfString(str, pos + 1, result);
 }
 
-/* ── FIRST ── */
-void compute_first() {
-    int changed;
-    do {
+/* ---------- FOLLOW ---------- */
+
+void computeFollow() {
+    add(follow[0], '$');
+
+    int changed = 1;
+
+    while (changed) {
         changed = 0;
-        for (int i = 0; i < nt_cnt; i++)
-            for (int j = 0; j < prod_cnt[i]; j++) {
-                char *rhs = prods[i][j];
-                if (!rhs[0] || rhs[0] == '#') {
-                    if (!in_set(First[i], first_cnt[i], "#"))
-                    { add_to_set(First[i], &first_cnt[i], "#"); changed = 1; }
-                    continue;
-                }
-                for (int k = 0; rhs[k]; k++) {
-                    if (!isupper(rhs[k])) {           /* terminal */
-                        char ts[2] = {rhs[k], 0};
-                        if (!in_set(First[i], first_cnt[i], ts))
-                        { add_to_set(First[i], &first_cnt[i], ts); changed = 1; }
+
+        for (int i = 0; i < n; i++) {
+            char A = prod[i][0];
+            int Aidx = idxNT(A);
+            char *rhs = prod[i] + 2;
+
+            for (int j = 0; rhs[j]; j++) {
+                char B = rhs[j];
+
+                if (!isupper(B)) continue;
+
+                int Bidx = idxNT(B);
+                int k = j + 1;
+                int hasEps = 1;
+
+                while (rhs[k]) {
+
+                    hasEps = 0;
+
+                    if (!isupper(rhs[k])) {
+                        if (add(follow[Bidx], rhs[k])) changed = 1;
                         break;
                     }
-                    int xi = nt_idx(rhs[k]);           /* non-terminal */
-                    for (int m = 0; m < first_cnt[xi]; m++)
-                        if (strcmp(First[xi][m], "#"))
-                            if (!in_set(First[i], first_cnt[i], First[xi][m]))
-                            { add_to_set(First[i], &first_cnt[i], First[xi][m]); changed = 1; }
-                    if (!in_set(First[xi], first_cnt[xi], "#")) break;
-                    if (!rhs[k+1])   /* entire rhs derives eps */
-                        if (!in_set(First[i], first_cnt[i], "#"))
-                        { add_to_set(First[i], &first_cnt[i], "#"); changed = 1; }
-                }
-            }
-    } while (changed);
-}
 
-/* ── FOLLOW ── */
-void compute_follow(char start) {
-    add_to_set(Follow[nt_idx(start)], &follow_cnt[nt_idx(start)], "$");
-    int changed;
-    do {
-        changed = 0;
-        for (int i = 0; i < nt_cnt; i++)
-            for (int j = 0; j < prod_cnt[i]; j++) {
-                char *rhs = prods[i][j];
-                for (int k = 0; rhs[k]; k++) {
-                    if (!isupper(rhs[k])) continue;
-                    int bi = nt_idx(rhs[k]);
-                    /* add FIRST(beta) - {eps} to FOLLOW(B) */
-                    int eps_possible = 1;
-                    for (int m = k+1; rhs[m] && eps_possible; m++) {
-                        if (!isupper(rhs[m])) {
-                            char ts[2] = {rhs[m], 0};
-                            if (!in_set(Follow[bi], follow_cnt[bi], ts))
-                            { add_to_set(Follow[bi], &follow_cnt[bi], ts); changed = 1; }
-                            eps_possible = 0;
-                        } else {
-                            int xi = nt_idx(rhs[m]);
-                            for (int q = 0; q < first_cnt[xi]; q++)
-                                if (strcmp(First[xi][q], "#"))
-                                    if (!in_set(Follow[bi], follow_cnt[bi], First[xi][q]))
-                                    { add_to_set(Follow[bi], &follow_cnt[bi], First[xi][q]); changed = 1; }
-                            if (!in_set(First[xi], first_cnt[xi], "#")) eps_possible = 0;
-                        }
+                    int Cidx = idxNT(rhs[k]);
+                    int epsInC = 0;
+
+                    for (int x = 0; first[Cidx][x]; x++) {
+                        if (first[Cidx][x] == '#')
+                            epsInC = 1;
+                        else if (add(follow[Bidx], first[Cidx][x]))
+                            changed = 1;
                     }
-                    /* if beta =>* eps, add FOLLOW(A) */
-                    if (eps_possible)
-                        for (int m = 0; m < follow_cnt[i]; m++)
-                            if (!in_set(Follow[bi], follow_cnt[bi], Follow[i][m]))
-                            { add_to_set(Follow[bi], &follow_cnt[bi], Follow[i][m]); changed = 1; }
+
+                    if (epsInC) {
+                        hasEps = 1;
+                        k++;
+                    } else {
+                        hasEps = 0;
+                        break;
+                    }
+                }
+
+                if (hasEps) {
+                    for (int x = 0; follow[Aidx][x]; x++) {
+                        if (add(follow[Bidx], follow[Aidx][x]))
+                            changed = 1;
+                    }
                 }
             }
-    } while (changed);
-}
-
-/* ── FIRST of a string (for table building) ── */
-void first_of_string(char *s, int src_nt, char out[][4], int *cnt) {
-    *cnt = 0;
-    if (!s[0] || s[0] == '#') { add_to_set(out, cnt, "#"); return; }
-    for (int k = 0; s[k]; k++) {
-        if (!isupper(s[k])) {
-            char ts[2] = {s[k], 0};
-            add_to_set(out, cnt, ts); return;
         }
-        int xi = nt_idx(s[k]);
-        for (int m = 0; m < first_cnt[xi]; m++)
-            if (strcmp(First[xi][m], "#")) add_to_set(out, cnt, First[xi][m]);
-        if (!in_set(First[xi], first_cnt[xi], "#")) return;
     }
-    add_to_set(out, cnt, "#");
 }
 
-/* ── Build parsing table ── */
-void build_table() {
-    for (int i = 0; i < nt_cnt; i++)
-        for (int j = 0; j < t_cnt; j++) table[i][j][0] = 0;
+/* ---------- TABLE ---------- */
 
-    for (int i = 0; i < nt_cnt; i++)
-        for (int j = 0; j < prod_cnt[i]; j++) {
-            char *rhs = prods[i][j];
-            char fs[MAX_T][4]; int fc = 0;
-            first_of_string(rhs, i, fs, &fc);
+void buildTable() {
+    for (int i = 0; i < ntCount; i++)
+        for (int j = 0; j < tCount; j++)
+            table[i][j][0] = '\0';
 
-            for (int m = 0; m < fc; m++) {
-                if (!strcmp(fs[m], "#")) continue;
-                int ti = t_idx(fs[m]);
-                if (ti >= 0) {
-                    char entry[MAX_LEN];
-                    snprintf(entry, sizeof entry, "%c->%s", nonterm[i], rhs);
-                    strcpy(table[i][ti], entry);
-                }
-            }
-            if (in_set(fs, fc, "#"))
-                for (int m = 0; m < follow_cnt[i]; m++) {
-                    int ti = t_idx(Follow[i][m]);
-                    if (ti >= 0) {
-                        char entry[MAX_LEN];
-                        snprintf(entry, sizeof entry, "%c->%s", nonterm[i], rhs);
-                        strcpy(table[i][ti], entry);
-                    }
-                }
+    for (int i = 0; i < n; i++) {
+        char A = prod[i][0];
+        int Aidx = idxNT(A);
+        char *rhs = prod[i] + 2;
+
+        char temp[MAX] = "";
+        firstOfString(rhs, 0, temp);
+
+        for (int j = 0; temp[j]; j++) {
+            if (temp[j] == '#') continue;
+
+            int tidx = idxT(temp[j]);
+
+            if (strlen(table[Aidx][tidx]) != 0)
+                printf("Conflict at [%c, %c]\n", A, temp[j]);
+
+            strcpy(table[Aidx][tidx], prod[i]);
         }
+
+        if (contains(temp, '#')) {
+            for (int j = 0; follow[Aidx][j]; j++) {
+                int tidx = idxT(follow[Aidx][j]);
+
+                if (strlen(table[Aidx][tidx]) != 0)
+                    printf("Conflict at [%c, %c]\n", A, follow[Aidx][j]);
+
+                strcpy(table[Aidx][tidx], prod[i]);
+            }
+        }
+    }
 }
 
-/* ── Print table ── */
-void print_table() {
-    printf("\n=== Parsing Table ===\n%-6s", "");
-    for (int j = 0; j < t_cnt; j++) printf("%-14s", term[j]);
+/* ---------- PRINT ---------- */
+
+void printFirst() {
+    printf("\nFIRST:\n");
+    for (int i = 0; i < ntCount; i++) {
+        printf("FIRST(%c) = { ", nt[i]);
+        for (int j = 0; first[i][j]; j++)
+            printf("%c ", first[i][j]);
+        printf("}\n");
+    }
+}
+
+void printFollow() {
+    printf("\nFOLLOW:\n");
+    for (int i = 0; i < ntCount; i++) {
+        printf("FOLLOW(%c) = { ", nt[i]);
+        for (int j = 0; follow[i][j]; j++)
+            printf("%c ", follow[i][j]);
+        printf("}\n");
+    }
+}
+
+void printTable() {
+    printf("\nParsing Table:\n\n");
+
+    printf("     ");
+    for (int i = 0; i < tCount; i++)
+        printf("%5c", t[i]);
     printf("\n");
-    for (int i = 0; i < nt_cnt; i++) {
-        printf("%-6c", nonterm[i]);
-        for (int j = 0; j < t_cnt; j++)
-            printf("%-14s", table[i][j][0] ? table[i][j] : "-");
+
+    for (int i = 0; i < ntCount; i++) {
+        printf("%5c", nt[i]);
+        for (int j = 0; j < tCount; j++) {
+            if (strlen(table[i][j]) == 0)
+                printf("%5s", "-");
+            else
+                printf("%5s", table[i][j]);
+        }
         printf("\n");
     }
 }
 
-/* ── Parse an input string ── */
-void parse(char *input) {
-    /* stack holds chars; top is stack[top-1] */
-    char stack[STACK_SIZE]; int top = 0;
-    stack[top++] = '$';
-    stack[top++] = nonterm[0];   /* push start symbol */
+/* ---------- PARSER ---------- */
 
-    char buf[100]; snprintf(buf, sizeof buf, "%s$", input);
-    int pos = 0;
+void pushReverse(char stack[], int *top, char rhs[]) {
+    if (strcmp(rhs, "#") == 0) return;
 
-    printf("\n%-20s %-20s %-20s\n", "Stack", "Input", "Action");
-    printf("%-20s %-20s %-20s\n", "-----", "-----", "------");
-
-    while (top > 0) {
-        /* print stack */
-        char stk_str[STACK_SIZE+1];
-        for (int i = top-1, k=0; i >= 0; i--) stk_str[k++] = stack[i], stk_str[k] = 0;
-        printf("%-20s %-20s ", stk_str, buf+pos);
-
-        char X = stack[top-1];
-        char cur[4] = {buf[pos], 0};   /* current input symbol */
-
-        if (X == '$' && buf[pos] == '$') { printf("Accept\n"); return; }
-
-        if (!isupper(X)) {             /* terminal on stack */
-            if (X == buf[pos]) { printf("Match %c\n", X); top--; pos++; }
-            else               { printf("Error: expected '%c'\n", X); return; }
-        } else {                       /* non-terminal on stack */
-            int ni = nt_idx(X), ti = t_idx(cur);
-            if (ni < 0 || ti < 0 || !table[ni][ti][0]) {
-                printf("Error: no rule for %c on '%s'\n", X, cur); return;
-            }
-            char *prod = strchr(table[ni][ti], '>') + 1;  /* skip "A->" */
-            printf("Output: %c->%s\n", X, prod);
-            top--;   /* pop X */
-            if (strcmp(prod, "#"))     /* push rhs in reverse */
-                for (int k = strlen(prod)-1; k >= 0; k--)
-                    stack[top++] = prod[k];
-        }
-    }
-    printf("Error: stack empty before accept.\n");
+    for (int i = strlen(rhs) - 1; i >= 0; i--)
+        stack[++(*top)] = rhs[i];
 }
 
-/* ── main ── */
+void getRHS(char prod[], char rhs[]) {
+    int i = 2, j = 0;
+    while (prod[i]) rhs[j++] = prod[i++];
+    rhs[j] = '\0';
+}
+
+void predictiveParse(char input[]) {
+    char stack[MAX];
+    int top = -1;
+
+    stack[++top] = '$';
+    stack[++top] = nt[0];
+
+    int ip = 0;
+
+    printf("\nSTACK\tINPUT\tACTION\n");
+
+    while (top >= 0) {
+        char X = stack[top];
+        char a = input[ip];
+
+        if (X == '$' && a == '$') {
+            printf("$\t$\tACCEPT\n");
+            return;
+        }
+
+        if (!isupper(X)) {
+            if (X == a) {
+                printf("%c\t%s\tMatch\n", X, input+ip);
+                top--; ip++;
+            } else {
+                printf("ERROR\n");
+                return;
+            }
+        } else {
+            int row = idxNT(X);
+            int col = idxT(a);
+
+            if (strlen(table[row][col]) == 0) {
+                printf("ERROR\n");
+                return;
+            }
+
+            char production[MAX_LEN];
+            strcpy(production, table[row][col]);
+
+            printf("%c\t%s\t%s\n", X, input+ip, production);
+
+            top--;
+
+            char rhs[MAX_LEN];
+            getRHS(production, rhs);
+            pushReverse(stack, &top, rhs);
+        }
+    }
+}
+
+/* ---------- MAIN ---------- */
+
 int main() {
-    read_grammar();
-    compute_first();
-    compute_follow(nonterm[0]);
+    char input[MAX_LEN];
 
-    printf("\n=== FIRST sets ===\n");
-    for (int i = 0; i < nt_cnt; i++) {
-        printf("FIRST(%c) = { ", nonterm[i]);
-        for (int j = 0; j < first_cnt[i]; j++) printf("%s ", First[i][j]);
-        printf("}\n");
+    printf("Enter number of productions: ");
+    scanf("%d", &n);
+
+    printf("Enter productions (A=alpha):\n");
+    for (int i = 0; i < n; i++)
+        scanf("%s", prod[i]);
+
+    getNT();
+    getT();
+
+    for (int i = 0; i < ntCount; i++) {
+        first[i][0] = '\0';
+        follow[i][0] = '\0';
     }
-    printf("\n=== FOLLOW sets ===\n");
-    for (int i = 0; i < nt_cnt; i++) {
-        printf("FOLLOW(%c) = { ", nonterm[i]);
-        for (int j = 0; j < follow_cnt[i]; j++) printf("%s ", Follow[i][j]);
-        printf("}\n");
-    }
 
-    build_table();
-    print_table();
+    computeFirst();
+    computeFollow();
+    buildTable();
 
-    char input[100];
-    printf("\nEnter input string to parse: "); scanf("%s", input);
-    parse(input);
+    printFirst();
+    printFollow();
+    printTable();
+
+    printf("\nEnter input string: ");
+    scanf("%s", input);
+    strcat(input, "$");
+
+    predictiveParse(input);
+
     return 0;
 }

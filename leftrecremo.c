@@ -1,103 +1,109 @@
-#include <stdio.h>
-#include <string.h>
-#include <ctype.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include<string.h>
+#define MAX 100
 
-#define MAX_PROD 20
-#define MAX_LEN  100
+char nt[MAX];
+char rhs[MAX][MAX][MAX];
+int counts[MAX];
 
-/* Grammar storage */
-char lhs[MAX_PROD][3];        /* Left-hand side non-terminal (e.g. "A" or "A'") */
-char rhs[MAX_PROD][MAX_LEN];  /* Right-hand side alternatives (|)  */
-int  count = 0;               /* Total number of grammar rules      */
+void parse_input(char *input,int idx){
+    int i=0,j=0,k=0;
+    while(input[i] != '\0'){
+        if(input[i] == '|'){
+            rhs[idx][j][k] = '\0';
+            j++;
+            k = 0;
+        }else{
+            rhs[idx][j][k++] = input[i];
+        }
+        i++;
+    }
+    rhs[idx][j][k] = '\0';
+    counts[idx] = j+1;
+}
 
-void read_grammar(int n) {
-    printf("Enter productions (e.g.  A=aA|b  or  E=ET|a):\n");
-    for (int i = 0; i < n; i++) {
-        char line[MAX_LEN];
-        fgets(line, sizeof(line), stdin);
-        line[strcspn(line, "\n")] = '\0';
+void substitue(int i,int j){
+    char newrhs[MAX][MAX];
+    int newcount = 0;
 
-        lhs[count][0] = line[0];          /* First char is NT     */
-        lhs[count][1] = '\0';
-        strcpy(rhs[count], strchr(line,'=') + 1);  /* After '='   */
-        count++;
+    for(int k=0;k<counts[i];k++){
+        if(rhs[i][k][0] == nt[j]){
+            for(int l=0;l<counts[j];l++){
+                strcpy(newrhs[newcount],rhs[j][l]);
+                strcat(newrhs[newcount],rhs[i][k]+1);
+                newcount++;
+            }
+        }else{
+            strcpy(newrhs[newcount++],rhs[i][k]);
+        }
+    }
+
+    counts[i] = newcount;
+    for(int k=0;k<newcount;k++){
+        strcpy(rhs[i][k],newrhs[k]);
     }
 }
 
-void remove_left_recursion() {
-    for (int i = 0; i < count; i++) {
-        char A = lhs[i][0];
+void remove_direct(int i){
+    char alpha[MAX][MAX], beta[MAX][MAX];
+    int a_cnt = 0, b_cnt = 0;
+    char non_terminal = nt[i];
 
-        /* ---- Collect alpha and beta lists ---- */
-        char alpha[MAX_PROD][MAX_LEN];  /* left-recursive tails  */
-        char beta [MAX_PROD][MAX_LEN];  /* normal alternatives   */
-        int  na = 0, nb = 0;
-
-        /* Tokenise rhs by '|' */
-        char tmp[MAX_LEN];
-        strcpy(tmp, rhs[i]);
-        char *tok = strtok(tmp, "|");
-        while (tok) {
-            if (tok[0] == A)                         /* starts with A? */
-                strcpy(alpha[na++], tok + 1);        /* save tail      */
-            else
-                strcpy(beta[nb++], tok);
-            tok = strtok(NULL, "|");
+    for(int j=0;j<counts[i];j++){
+        if(rhs[i][j][0] == non_terminal){
+            strcpy(alpha[a_cnt++],rhs[i][j]+1);
+        }else{
+            strcpy(beta[b_cnt++],rhs[i][j]);
         }
-
-        if (na == 0) continue;   /* No left recursion found → skip */
-
-        /* ---- Build new A' name (e.g. A → A') ---- */
-        char Ap[3] = { A, '\'', '\0' };   /* "A'" */
-
-        /* ---- Rewrite A:  beta1 A' | beta2 A' | ... ---- */
-        char newA[MAX_LEN] = "";
-        for (int b = 0; b < nb; b++) {
-            if (b) strcat(newA, "|");
-            strcat(newA, beta[b]);
-            strcat(newA, Ap);           /* append A' after each beta */
-        }
-        if (nb == 0) strcpy(newA, Ap); /* A had ONLY recursive alts */
-        strcpy(rhs[i], newA);
-
-        /* ---- Append new rule:  A' → alpha1 A' | alpha2 A' | # ---- */
-        lhs[count][0] = Ap[0];         /* store 'A'  */
-        lhs[count][1] = Ap[1];         /* store '\'' */
-        lhs[count][2] = '\0';
-
-        char newAp[MAX_LEN] = "";
-        for (int a = 0; a < na; a++) {
-            if (a) strcat(newAp, "|");
-            strcat(newAp, alpha[a]);
-            strcat(newAp, Ap);          /* alpha1 A', alpha2 A', ...  */
-        }
-        strcat(newAp, "|#");            /* add  ε  alternative        */
-
-        strcpy(rhs[count], newAp);
-        count++;
     }
+
+    if(a_cnt == 0) return;
+
+    printf("%c -> ",non_terminal);
+    if(b_cnt == 0){
+        printf("%c'",non_terminal);
+    }else{
+        for(int j=0;j<b_cnt;j++){
+            printf("%s%c' ",beta[j],non_terminal);
+            if(j<b_cnt-1) printf(" | ");
+        }
+    }
+
+    printf("\n%c' -> ",non_terminal);
+    for(int j=0;j<a_cnt;j++){
+        printf("%s%c' | ",alpha[j],non_terminal);
+    }
+    printf("#\n");
 }
 
-void print_grammar() {
-    for (int i = 0; i < count; i++)
-        printf("  %s = %s\n", lhs[i], rhs[i]);
-}
-
-int main() {
+int main(){
+    char input[MAX];
     int n;
     printf("Enter number of productions: ");
-    scanf("%d", &n);
-    getchar();
+    scanf("%d",&n);
 
-    read_grammar(n);
+    for(int i=0;i<n;i++){
+        printf("Enter prod: ");
+        scanf("%s",input);
+        nt[i] = input[0];
+        parse_input(input+3,i);
+    }
 
-    printf("\n--- Original Grammar ---\n");
-    print_grammar();
+    for(int i=0;i<n;i++){
+        for(int j=0;j<i;j++){
+            substitue(i,j);
+        }
 
-    remove_left_recursion();
+        // printf("%c -> ",nt[i]);
+        // for(int j=0;j<counts[i];j++){
+        //     printf("%s",rhs[i][j]);
+        //     if(j < counts[i]-1)
+        //         printf(" | ");
+        // }
+        // printf("\n");
 
-    printf("\n--- After Left Recursion Removal ---\n");
-    print_grammar();
-
+        remove_direct(i);
+    }
     return 0;
 }

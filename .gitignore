@@ -2,3 +2,4 @@
 *.exe
 test*.c
 tempCodeRunnerFile.c
+all.c

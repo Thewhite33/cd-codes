@@ -5,13 +5,11 @@
 #define MAX 100
 
 char prod[MAX][MAX];
+int n;
 char first[MAX][MAX];
 char follow[MAX][MAX];
-
-int ntCount = 0;
-int n;
-
 char nt[MAX];
+int ntCount = 0;
 
 int ntIdx(char c){
     for(int i=0;i<ntCount;i++){
@@ -22,11 +20,10 @@ int ntIdx(char c){
     return -1;
 }
 
-void getTerminals(){
+void getNonTerminals(){
     for(int i=0;i<n;i++){
-        char c = prod[i][0];
-        if(ntIdx(c) == -1){
-            nt[ntCount++] = c;
+        if(ntIdx(prod[i][0]) == -1){
+            nt[ntCount++] = prod[i][0];
         }
     }
 }
@@ -42,22 +39,22 @@ int contains(char set[],char c){
 
 int add(char set[],char c){
     if(!contains(set,c)){
-        int l = strlen(set);
-        set[l] = c;
-        set[l+1] = '\0';
+        int len = strlen(set);
+        set[len] = c;
+        set[len+1] = '\0';
         return 1;
     }
     return 0;
 }
 
-void calculateFirst(){
+void computeFirst(){
     for(int i=0;i<n;i++){
         char A = prod[i][0];
-        char X = prod[i][2];
+        char B = prod[i][3];
 
-        if(!isupper(X)){
+        if(!isupper(B)){
             int Aidx = ntIdx(A);
-            add(first[Aidx],X);
+            add(first[Aidx],B);
         }
     }
     int changed = 1;
@@ -66,19 +63,19 @@ void calculateFirst(){
         for(int i=0;i<n;i++){
             char A = prod[i][0];
             int Aidx = ntIdx(A);
-            int k = 2;
-            int hasEps = 1;
 
-            while(prod[i][k] != '\0' && hasEps){
-                char X = prod[i][k];
+            char *rhs = prod[i]+3;
+            int hasEps = 1;
+            for(int m=0;rhs[m] && hasEps;m++){
                 hasEps = 0;
+                char X = rhs[m];
+                int Xidx = ntIdx(X);
                 if(isupper(X)){
-                    int Xidx = ntIdx(X);
-                    for(int j=0;first[Xidx][j];j++){
-                        if(first[Xidx][j] == '#'){
+                    for(int l=0;first[Xidx][l];l++){
+                        if(first[Xidx][l] == '#'){
                             hasEps = 1;
                         }else{
-                            if(add(first[Aidx],first[Xidx][j])){
+                            if(add(first[Aidx],first[Xidx][l])){
                                 changed = 1;
                             }
                         }
@@ -92,7 +89,6 @@ void calculateFirst(){
                         }
                     }
                 }
-                k++;
             }
             if(hasEps){
                 if(add(first[Aidx],'#')){
@@ -113,50 +109,50 @@ void printFirst(){
     }
 }
 
-void calculateFollow(){
+void computeFollow(){
     add(follow[ntIdx(prod[0][0])],'$');
-    int followChanged = 1;
-    while(followChanged){
-        followChanged = 0;
+    int changed = 1;
+    while(changed){
+        changed = 0;
         for(int i=0;i<n;i++){
             char A = prod[i][0];
             int Aidx = ntIdx(A);
 
-            for(int j=2;prod[i][j]!='\0';j++){
-                char B = prod[i][j];
-                int Bidx = ntIdx(B);
-                if(isupper(B)){
-                    int k = j+1;
+            for(int j=3;prod[i][j];j++){
+                char X = prod[i][j];
+                if(isupper(X)){
+                    int Xidx = ntIdx(X);
                     int hasEps = 1;
+                    int k = j+1;
                     while(prod[i][k] != '\0' && hasEps){
-                        char X = prod[i][k];
                         hasEps = 0;
-                        if(isupper(X)){
-                            int Xidx = ntIdx(X);
-                            for(int l=0;first[Xidx][l];l++){
-                                if(first[Xidx][l] == '#'){
+                        char B = prod[i][k];
+                        if(isupper(B)){
+                            int Bidx = ntIdx(B);
+                            for(int l=0;first[Bidx][l];l++){
+                                if(first[Bidx][l] == '#'){
                                     hasEps = 1;
                                 }else{
-                                    if(add(follow[Bidx],first[Xidx][l])){
-                                        followChanged = 1;
+                                    if(add(follow[Xidx],first[Bidx][l])){
+                                        changed = 1;
                                     }
                                 }
                             }
                         }else{
-                            if(X == '#'){
+                            if(B == '#'){
                                 hasEps = 1;
                             }else{
-                                if(add(follow[Bidx],X)){
-                                    followChanged = 1;
+                                if(add(follow[Xidx],B)){
+                                    changed = 1;
                                 }
                             }
                         }
                         k++;
                     }
                     if(hasEps){
-                        for(int l=0;follow[Aidx][l];l++){
-                            if(add(follow[Bidx],follow[Aidx][l])){
-                                followChanged = 1;
+                        for(int f=0;follow[Aidx][f];f++){
+                            if(add(follow[Xidx],follow[Aidx][f])){
+                                changed = 1;
                             }
                         }
                     }
@@ -184,13 +180,12 @@ int main(){
         scanf("%s",prod[i]);
     }
 
-    getTerminals();
+    getNonTerminals();
 
-    calculateFirst();
+    computeFirst();
     printFirst();
 
-    calculateFollow();
+    computeFollow();
     printFollow();
-
     return 0;
 }
